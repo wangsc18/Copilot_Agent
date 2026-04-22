@@ -118,6 +118,66 @@ class TestAgentToolBridge(unittest.TestCase):
         self.assertTrue(out["ok"])
         self.assertEqual(out["executed"], ["set_gear"])
 
+    def test_new_control_tools_are_supported(self):
+        bridge = AgentToolBridge(
+            monitor=StubMonitor(latest=make_snapshot()),
+            situation_engine=StubSituationEngine(),
+            guard=StubGuard(allow=True),
+            executor=StubExecutor(),
+        )
+        self.assertTrue(bridge.execute("set_roll_cmd", {"value": 0.2})["ok"])
+        self.assertTrue(bridge.execute("set_pitch_cmd", {"value": 0.1})["ok"])
+        self.assertTrue(bridge.execute("set_rudder_cmd", {"value": -0.3})["ok"])
+        self.assertTrue(bridge.execute("set_speedbrake", {"value": 0.5})["ok"])
+
+    def test_closed_loop_target_pitch_returns_structured_result(self):
+        snap = make_snapshot()
+        snap.pitch_deg = 8.0
+        bridge = AgentToolBridge(
+            monitor=StubMonitor(latest=snap),
+            situation_engine=StubSituationEngine(),
+            guard=StubGuard(allow=True),
+            executor=StubExecutor(),
+        )
+        out = bridge.execute("set_target_pitch_deg", {"value": 8.0})
+        self.assertTrue(out["ok"])
+        self.assertIn("target_pitch_deg", out)
+        self.assertIn("final_pitch_deg", out)
+        self.assertIn("steps", out)
+        self.assertIn("executed", out)
+
+    def test_closed_loop_turn_heading_returns_structured_result(self):
+        snap = make_snapshot()
+        snap.heading_true_deg = 270.0
+        bridge = AgentToolBridge(
+            monitor=StubMonitor(latest=snap),
+            situation_engine=StubSituationEngine(),
+            guard=StubGuard(allow=True),
+            executor=StubExecutor(),
+        )
+        out = bridge.execute("turn_to_heading", {"heading_deg": 270.0})
+        self.assertTrue(out["ok"])
+        self.assertIn("target_heading_deg", out)
+        self.assertIn("final_heading_deg", out)
+        self.assertIn("final_heading_error_deg", out)
+        self.assertIn("steps", out)
+        self.assertIn("executed", out)
+
+    def test_closed_loop_tools_can_run_async(self):
+        snap = make_snapshot()
+        snap.pitch_deg = 8.0
+        bridge = AgentToolBridge(
+            monitor=StubMonitor(latest=snap),
+            situation_engine=StubSituationEngine(),
+            guard=StubGuard(allow=True),
+            executor=StubExecutor(),
+        )
+        out = bridge.execute_async("set_target_pitch_deg", {"value": 8.0})
+        self.assertTrue(out["ok"])
+        self.assertTrue(out["accepted"])
+        self.assertEqual(out["mode"], "async")
+        self.assertIn("job_id", out)
+
 
 if __name__ == "__main__":
     unittest.main()

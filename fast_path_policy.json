@@ -1,0 +1,19 @@
+﻿{
+  "state_query_keywords": ["状态", "state", "phase", "当前情况", "现在情况", "飞行状态", "风险", "risks"],
+  "max_abs_target_pitch_deg_fast": 10.0,
+  "max_heading_delta_deg_fast": 45.0,
+  "blocked_phases_for_fast_control": ["takeoff_roll", "landing_roll"],
+  "blocked_risks_for_fast_control": ["stall_risk", "overspeed_risk", "unstable_approach", "runway_excursion_risk"],
+  "action_policies": {
+    "set_throttle": { "mode": "direct" },
+    "set_roll_cmd": { "mode": "direct" },
+    "set_pitch_cmd": { "mode": "llm" },
+    "set_target_pitch_deg": { "mode": "direct" },
+    "turn_to_heading": { "mode": "direct" },
+    "set_rudder_cmd": { "mode": "direct" },
+    "set_speedbrake": { "mode": "direct" },
+    "release_brakes": { "mode": "direct" },
+    "set_flaps": { "mode": "llm" },
+    "set_gear": { "mode": "llm" }
+  }
+}

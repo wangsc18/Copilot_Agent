@@ -18,7 +18,10 @@ class ControlMode(str, Enum):
 class ActionType(str, Enum):
     # 统一的动作类型枚举，供 LLM 工具、Guard 和 Executor 共享
     SET_THROTTLE = "set_throttle"
+    SET_ROLL_CMD = "set_roll_cmd"
     SET_PITCH_CMD = "set_pitch_cmd"
+    SET_RUDDER_CMD = "set_rudder_cmd"
+    SET_SPEEDBRAKE = "set_speedbrake"
     SET_GEAR = "set_gear"
     SET_FLAPS = "set_flaps"
     RELEASE_BRAKES = "release_brakes"
