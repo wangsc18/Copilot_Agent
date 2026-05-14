@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+"""Small background runner for long-running closed-loop tools.
+
+Target pitch and target heading commands can continue after the frontend has
+already answered. This runner stores those jobs and reports completion back to
+the UI for the next backend summary.
+"""
+
 import threading
 import time
 import uuid

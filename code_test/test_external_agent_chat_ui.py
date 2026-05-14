@@ -201,6 +201,21 @@ class TestFastCommandRouter(unittest.TestCase):
         self.assertEqual(decision.kind, "fast_gate_defer")
         self.assertTrue(decision.run_slow)
 
+    def test_relative_left_turn_uses_spoken_delta(self):
+        snap = make_snapshot()
+        snap.heading_true_deg = 45.0
+        tools = AgentToolBridge(
+            monitor=StubMonitor(latest=snap),
+            situation_engine=StubSituationEngine(),
+            guard=StubGuard(),
+            executor=StubExecutor(),
+        )
+        router = FastCommandRouter(tools)
+        delta = router._parse_relative_heading_delta_deg("将我的飞机向左偏转 15 度")
+        self.assertEqual(delta, -15.0)
+        target = router._target_heading_from_relative_delta(delta)
+        self.assertEqual(target, 30.0)
+
     def test_policy_file_controls_fast_actions(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "fast_path_policy.json"
@@ -250,6 +265,41 @@ class TestBackgroundSummary(unittest.TestCase):
         out = app_cls._drain_bg_summaries(fake)
         self.assertEqual(out, ["a", "b"])
         self.assertEqual(fake._pending_bg_summaries, [])
+
+
+class TestVoiceGatewayHelpers(unittest.TestCase):
+    def test_voice_classification_routes_flight_status_to_backend(self):
+        app_cls = __import__("external_agent_chat_ui").ExternalAgentChatApp
+        fake = type("Fake", (), {})()
+        fake._voice_agent_call_mode = "on_demand"
+        fake.client = None
+        fake._voice_intent_llm_fallback = False
+        fake._voice_intent_llm_threshold = 0.55
+        fake._should_dispatch_voice_to_backend = lambda text: app_cls._should_dispatch_voice_to_backend(fake, text)
+        self.assertEqual(app_cls._classify_voice_final_by_rule(fake, "现在飞机状态如何").intent, "flight_task")
+        self.assertEqual(app_cls._classify_voice_final_by_rule(fake, "你是谁").intent, "smalltalk")
+        self.assertEqual(app_cls._classify_voice_final_by_rule(fake, "嗯").intent, "unclear")
+
+    def test_voice_playback_text_is_short(self):
+        app_cls = __import__("external_agent_chat_ui").ExternalAgentChatApp
+        long_text = "状态正常。" + "高度速度航向稳定" * 40
+        playback = app_cls._build_voice_playback_text(long_text)
+        self.assertLessEqual(len(playback), 220)
+        self.assertTrue(playback)
+
+    def test_voice_playback_text_summarizes_flight_state(self):
+        app_cls = __import__("external_agent_chat_ui").ExternalAgentChatApp
+        raw = "阶段：cruise | 置信度：0.99 | 空速：107.89724731445312 kt | 高度：856.0022583007812 ft | 升降率：0.045777201652526855 fpm | 风险：无明显风险"
+        playback = app_cls._build_voice_playback_text(raw)
+        self.assertEqual(playback, "当前处于巡航阶段，空速约108节，高度约856英尺，未见明显风险。")
+
+    def test_voice_playback_rounds_long_decimals(self):
+        app_cls = __import__("external_agent_chat_ui").ExternalAgentChatApp
+        raw = "后台结果简报：后台执行结束：俯仰目标 15.0° 未在时限内收敛，当前约 9.429946899414062°。"
+        playback = app_cls._build_voice_playback_text(raw)
+        self.assertIn("15°", playback)
+        self.assertIn("9.43°", playback)
+        self.assertNotIn("9.429946899414062", playback)
 
 
 if __name__ == "__main__":

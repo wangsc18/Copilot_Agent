@@ -1,5 +1,15 @@
 from __future__ import annotations
 
+"""Backend tool bridge and fast command router.
+
+Core responsibilities:
+- Parse low-risk, high-confidence commands in the fast path.
+- Expose guarded X-Plane tools to the slow LLM tool loop.
+- Keep all aircraft state reads and control writes behind AgentToolBridge.
+
+The UI and voice layers should not read or write X-Plane directly.
+"""
+
 import json
 import re
 from dataclasses import asdict, dataclass, field
@@ -149,6 +159,8 @@ def load_fast_path_policy(base_dir: Path) -> FastPathPolicy:
 
 
 class AgentToolBridge:
+    """Single backend authority for flight state reads and guarded control writes."""
+
     def __init__(
         self,
         *,
@@ -402,6 +414,8 @@ class AgentToolBridge:
 
 
 class FastCommandRouter:
+    """Rule-based low-latency router for common state/control requests."""
+
     THROTTLE_KEYWORDS = ("throttle", "油门", "推力", "动力")
     ROLL_KEYWORDS = ("roll", "bank", "横滚", "转弯", "转向", "转右", "转左", "左右滚转")
     PITCH_KEYWORDS = ("pitch", "俯仰", "抬头", "低头")
@@ -567,6 +581,30 @@ class FastCommandRouter:
                 return float(m.group(1)) % 360.0
         return None
 
+    def _parse_relative_heading_delta_deg(self, text: str) -> float | None:
+        if not text:
+            return None
+        left = any(token in text for token in ("左", "left", "port"))
+        right = any(token in text for token in ("右", "right", "starboard"))
+        turn_intent = any(token in text for token in ("偏转", "转", "转向", "航向", "heading", "turn", "bank"))
+        if not turn_intent or left == right:
+            return None
+        match = re.search(r"(\d+(?:\.\d+)?)\s*(?:°|度|deg|degree|degrees)?", text)
+        if not match:
+            return None
+        value = min(45.0, max(1.0, float(match.group(1))))
+        return -value if left else value
+
+    def _target_heading_from_relative_delta(self, delta_deg: float) -> float | None:
+        state_result = self.tools.execute("get_flight_state", {})
+        if not state_result.get("ok"):
+            return None
+        latest = ((state_result.get("state") or {}).get("latest") or {})
+        current = latest.get("heading_true_deg")
+        if not isinstance(current, (int, float)):
+            return None
+        return (float(current) + float(delta_deg)) % 360.0
+
     @staticmethod
     def _summarize_target_result(name: str, result: dict[str, Any]) -> str:
         if name == "set_target_pitch_deg":
@@ -657,8 +695,14 @@ class FastCommandRouter:
         if target_pitch is not None and self._action_mode("set_target_pitch_deg") == "direct":
             target_ops.append(("set_target_pitch_deg", {"value": target_pitch}))
         target_heading = self._parse_target_heading_deg(text)
+        relative_heading_delta = self._parse_relative_heading_delta_deg(text)
+        if target_heading is None and relative_heading_delta is not None:
+            target_heading = self._target_heading_from_relative_delta(relative_heading_delta)
         if target_heading is not None and self._action_mode("turn_to_heading") == "direct":
-            target_ops.append(("turn_to_heading", {"heading_deg": target_heading}))
+            heading_args: dict[str, Any] = {"heading_deg": target_heading}
+            if relative_heading_delta is not None:
+                heading_args["relative_delta_deg"] = relative_heading_delta
+            target_ops.append(("turn_to_heading", heading_args))
         if target_ops:
             gate_ok, gate_reason, gate_ctx = self._check_fast_gate_for_targets(target_pitch=target_pitch, target_heading=target_heading)
             if not gate_ok:
